@@ -1,0 +1,38 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: mysql_container
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}  # Altere conforme necessário
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USERNAME}  # Definir usuário para acessar o MySQL
+      MYSQL_PASSWORD: ${DB_PASSWORD}  # Definir senha para o usuário do MySQL
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - mysql_network
+    restart: always
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin_container
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306  # Certifique-se de usar a porta 3306 do container MySQL
+      PMA_USER: ${DB_USERNAME}
+      PMA_PASSWORD: ${DB_PASSWORD}  # A mesma senha que você configurou para o MySQL
+    ports:
+      - "8080:80"
+    networks:
+      - mysql_network
+    restart: always
+
+networks:
+  mysql_network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+    driver: local
