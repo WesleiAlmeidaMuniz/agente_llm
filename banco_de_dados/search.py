@@ -57,7 +57,7 @@ def busca_dados_coleta_com_data(data):
                             where DATE(mt.created_at) = %s;""", (data,))
         resultados = cursor.fetchall()
 
-
+        print(resultados)
         return resultados
     except mysql.connector.Error as e:
         print(f"Erro de conexão com o banco de dados: {e}")
@@ -68,7 +68,7 @@ def busca_dados_coleta_com_data(data):
             conn.close()
 
 class ExtratorDeData(BaseModel):
-    data:str = Field("Data da coleta. Exemplo: 2025-01-01, 2024-09-10, 2025-02-13")
+    data:list = Field("Datas das coletas. Exemplo: yyyy-mm-dd")
 
 class DadosColetas(BaseTool):
     name:str = "DadosColetas"
@@ -91,9 +91,10 @@ class DadosColetas(BaseTool):
         try:
             response = cadeia.invoke({"input": input})
 
-            data = response['data']
-
-            dados = busca_dados_coleta_com_data(data)
+            datas:list = response['data']
+            dados = []
+            for data in datas:
+                dados.extend(busca_dados_coleta_com_data(data))
 
             if dados:
                 return "Dados Acessados com Sucesso!"
