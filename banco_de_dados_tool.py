@@ -8,7 +8,7 @@ import mysql.connector
 
 # Função para buscar pedidos no banco de dados
 @tool
-def busca_todas_as_coletas_data(query: str) -> list:
+def busca_todas_as_coletas_data(query: str) -> str:
     """
     Busca todas as coletas no banco de dados com base na data fornecida e salva no banco de dados.
     
@@ -16,13 +16,13 @@ def busca_todas_as_coletas_data(query: str) -> list:
         date (datetime): Data para filtrar os pedidos.
         
     Returns:
-        list: Lista de resultados com os pedidos que correspondem ao status.
+        str: String de resultados com as coletas que correspondem a data informada.
     """ 
 
-    # date_str = query.split("=")[1].strip().replace('"', '')
+    #date_str = query.split("=")[1].strip().replace('"', '').replace("'", '')
 
     # date_obj = datetime.strptime(date_str, "%Y-%m-%d")
-
+  
     try:
         # Estabelecendo a conexão com o banco
         conn = mysql.connector.connect(
@@ -41,14 +41,20 @@ def busca_todas_as_coletas_data(query: str) -> list:
                             mt.id AS minuta, 
                             mt.codigo_rastreio AS codigo_rastreio,
                             mt.created_at AS criado_em,
+                            ct.id as id_coleta,
                             ct.chave_nf as chave_nf,
+                            et.id as id_cliente,
                             et.nome as nome_cliente,
+                            edr.id as id_enderecos,
                             edr.logradouro as rua,
                             edr.numero as numero_rua,
+                            edr.complemento as complemento,
+                            bir.id as id_bairro,
                             bir.nome as bairro,
+                            cdd.id as id_cidade,
                             cdd.nome as cidade,
-                            ufs.nome as estado,
-                            edr.complemento as complemento
+                            ufs.id as id_ufs,
+                            ufs.nome as estado
                         FROM ccdblog_eventos.frete_criado ef
                         INNER JOIN ccdblog_temis.minutas mt ON ef.minutas_id = mt.id
                         LEFT JOIN ccdblog_temis.coletas ct on mt.id = ct.minuta_id
@@ -60,53 +66,95 @@ def busca_todas_as_coletas_data(query: str) -> list:
                         where DATE(mt.created_at) = %s;""", (query,))
         resultados = cursor.fetchall()
 
-        salvar_no_banco(resultados)
+        sucesso = salvar_no_banco(resultados)
 
         cursor.close()
         conn.close()
 
-        return resultados  # Lista dos pedidos que estão no status 'em_processamento'
+        if sucesso:
+            return resultados
+        else:
+            return 'Não foi possivel salvar os dados'
 
     except Exception as e:
         print(f"Erro ao buscar pedidos: {e}")
-        return []  # Caso ocorra um erro, retorne uma lista vazia
+        return [] 
     
 
 def salvar_no_banco(resultados: list):
+
     try:
         conn = mysql.connector.connect(
             host=os.getenv("DB_HOST"),
-            port=os.getenv("DB_PORT"),
+            port=int(os.getenv("DB_PORT")),
             user=os.getenv("DB_USERNAME"),
             password=os.getenv("DB_PASSWORD"),
             database=os.getenv("DB_NAME")
         )
         cursor = conn.cursor()
 
-        for linha in resultados:
-            # Verifica se a minuta já existe na tabela
-            cursor.execute("SELECT 1 FROM verificados WHERE minuta = %s LIMIT 1", (linha["minuta"],))
-            existe = cursor.fetchone()
+        for coleta in resultados:
 
-            if not existe:  # Se não existir, insere no banco
-                cursor.execute("""
-                    INSERT INTO verificados (
-                        minuta, chave_nf, dt_nf, valor_nf, peso_bruto, peso_liquido, 
-                        peso_cubado, volumes, status_coleta, criado_em, atualizado_em, 
-                        codigo_rastreio, status_minuta, tipo, nome_embarcador, 
-                        documento_embarcador, status_entidade, tipo_entidade
-                    ) 
-                    VALUES (
-                        %(minuta)s, %(chave_nf)s, %(dt_nf)s, %(valor_nf)s, %(peso_bruto)s, %(peso_liquido)s, 
-                        %(peso_cubado)s, %(volumes)s, %(status_coleta)s, %(criado_em)s, %(atualizado_em)s, 
-                        %(codigo_rastreio)s, %(status_minuta)s, %(tipo)s, %(nome_embarcador)s, 
-                        %(documento_embarcador)s, %(status_entidade)s, %(tipo_entidade)s
-                    );
-                """, linha)
+                # Inserir dados em ufs
+            cursor.execute("""
+                INSERT IGNORE INTO ufs (id, nome) 
+                VALUES (%(id_ufs)s, %(estado)s);
+            """, coleta)
+            conn.commit()
 
-        conn.commit()
-        cursor.close()
+            cursor.execute("""
+                INSERT IGNORE INTO cidades (id, nome, uf_id) 
+                VALUES (%(id_cidade)s, %(cidade)s, %(id_ufs)s);
+            """, coleta)
+            conn.commit()
+
+            cursor.execute("""
+                INSERT IGNORE INTO bairros (id, nome, cidade_id) 
+                VALUES (%(id_bairro)s, %(bairro)s, %(id_cidade)s);
+            """, coleta)
+            conn.commit()
+
+            cursor.execute("""
+                INSERT IGNORE INTO enderecos (id, entidade_id, logradouro, numero, complemento, bairro_id) 
+                VALUES (%(id_enderecos)s, %(id_cliente)s, %(rua)s, %(numero_rua)s, %(complemento)s, %(id_bairro)s);
+            """, coleta)
+            conn.commit()
+
+            cursor.execute("""
+                INSERT IGNORE INTO entidades (id, nome) 
+                VALUES (%(id_cliente)s, %(nome_cliente)s);
+            """, coleta)
+            conn.commit()
+
+            cursor.execute("""
+                INSERT IGNORE INTO coletas (id, minuta_id, chave_nf, remetente_id) 
+                VALUES (%(id_coleta)s, %(minuta)s, %(chave_nf)s, %(id_cliente)s);
+            """, coleta)
+            conn.commit()
+
+            cursor.execute("""
+                INSERT IGNORE INTO minutas (id, codigo_rastreio, criado_em) 
+                VALUES (%(minuta)s, %(codigo_rastreio)s, %(criado_em)s);
+            """, coleta)
+            conn.commit()
+
+            cursor.execute("""
+                INSERT IGNORE INTO eventos (id, minuta_id, criado_em) 
+                VALUES (%(evento_id)s, %(minuta)s, %(criado_em)s);
+            """, coleta)
+            conn.commit()
+
+            cursor.execute("""
+                INSERT IGNORE INTO verificar (minuta_id, eventos_id) 
+                VALUES (%(minuta)s, %(evento_id)s);
+            """, coleta)
+            conn.commit()
+
+
         conn.close()
+
+        return True
 
     except Exception as e:
         print(f"Erro ao salvar pedidos: {e}")
+        return False
